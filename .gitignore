@@ -1,0 +1,10 @@
+.build/
+.cache/
+.data/
+.dotnet/
+.nuget/
+.tmp/
+*.user
+*.suo
+bin/
+obj/

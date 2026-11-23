@@ -1,0 +1,3 @@
+The Windows Tor Expert Bundle is distributed by The Tor Project under its
+own license terms. The bundled runtime documentation and notices are under
+runtime\tor\docs. Keep those files with any redistributed build.
