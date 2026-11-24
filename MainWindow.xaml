@@ -50,7 +50,7 @@
                         <Image Source="orbot-logo.png" Width="36" Height="36" Stretch="Uniform" Margin="0,0,12,0" />
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Orbot PC" FontSize="17" FontWeight="SemiBold" />
-                            <TextBlock Text="Windows · 0.2.0" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,2,0,0" />
+                            <TextBlock Text="Windows · 0.3.0" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,2,0,0" />
                         </StackPanel>
                     </StackPanel>
                     <TextBlock Text="NETWORK" Foreground="#667482" FontSize="10" FontWeight="SemiBold" Margin="12,0,0,8" />
@@ -62,6 +62,9 @@
                     </Button>
                     <Button x:Name="NavServices" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="Services">
                         <StackPanel Orientation="Horizontal"><TextBlock Text="◇" Foreground="{StaticResource SecondaryBrush}" Width="28" FontSize="18"/><TextBlock Text="洋葱服务" /></StackPanel>
+                    </Button>
+                    <Button x:Name="NavClientAuth" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="ClientAuth">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="⌑" Foreground="{StaticResource SecondaryBrush}" Width="28" FontSize="18"/><TextBlock Text="洋葱客户端授权" /></StackPanel>
                     </Button>
                     <Button x:Name="NavLogs" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="Logs">
                         <StackPanel Orientation="Horizontal"><TextBlock Text="≡" Foreground="{StaticResource SecondaryBrush}" Width="28" FontSize="18"/><TextBlock Text="运行日志" /></StackPanel>
@@ -167,12 +170,21 @@
                                 <ComboBox x:Name="BridgeModeCombo" Width="290" HorizontalAlignment="Left" SelectionChanged="BridgeMode_SelectionChanged">
                                     <ComboBoxItem Content="直连 Tor" Tag="none" />
                                     <ComboBoxItem Content="obfs4 内置桥接" Tag="obfs4" />
+                                    <ComboBoxItem Content="meek 内置桥接" Tag="meek" />
                                     <ComboBoxItem Content="Snowflake 内置桥接" Tag="snowflake" />
+                                    <ComboBoxItem Content="Snowflake AMP 内置桥接" Tag="snowflake-amp" />
                                     <ComboBoxItem Content="WebTunnel（自定义桥接）" Tag="webtunnel" />
+                                    <ComboBoxItem Content="DNSTT 内置桥接" Tag="dnstt" />
                                     <ComboBoxItem Content="自定义桥接行" Tag="custom" />
                                 </ComboBox>
                                 <TextBlock Text="桥接行（每行一个，可留空使用随运行时附带的内置入口）" Style="{StaticResource LabelText}" Margin="0,18,0,7" />
                                 <TextBox x:Name="BridgeLinesBox" Height="126" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                                    <StackPanel><TextBlock Text="Moat 国家代码（可选）" Style="{StaticResource LabelText}"/><TextBox x:Name="MoatCountryBox" MaxLength="2" /></StackPanel>
+                                    <Button Grid.Column="2" Content="通过 Moat 获取" VerticalAlignment="Bottom" Click="FetchMoatBridges_Click" />
+                                </Grid>
+                                <TextBlock x:Name="MoatStatusText" Text="Moat 请求通过随包 meek_lite 临时隧道发送。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
                                 <Button Content="保存网络设置" HorizontalAlignment="Left" Margin="0,14,0,0" Click="SaveSettings_Click" />
                             </StackPanel>
                         </Border>
@@ -194,11 +206,42 @@
                                     <StackPanel Grid.Column="2"><TextBlock Text="洋葱端口" Style="{StaticResource LabelText}"/><TextBox x:Name="ServiceVirtualPortBox" Text="80" /></StackPanel>
                                     <StackPanel Grid.Column="4"><TextBlock Text="本机端口" Style="{StaticResource LabelText}"/><TextBox x:Name="ServiceTargetPortBox" Text="8080" /></StackPanel>
                                 </Grid>
-                                <Button Content="添加并应用（重启 Tor）" HorizontalAlignment="Left" Margin="0,16,0,0" Click="AddService_Click" />
+                                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                    <Button Content="添加并应用（重启 Tor）" Click="AddService_Click" />
+                                    <Button Content="导出服务配置" Margin="10,0,0,0" Click="ExportOnionServices_Click" />
+                                    <Button Content="导入服务配置" Margin="10,0,0,0" Click="ImportOnionServices_Click" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                         <TextBlock Text="已配置的服务" FontSize="15" FontWeight="SemiBold" Margin="0,4,0,12" />
                         <ItemsControl x:Name="ServicesList" />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="ClientAuthPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Padding="22" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="访问受保护的 v3 Onion 服务" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="为需要客户端授权的 .onion 服务保存私钥。密钥写入 Tor 的 ClientOnionAuthDir，并限制为当前 Windows 用户访问。" Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap" Margin="0,7,0,18" />
+                                <TextBlock Text="v3 Onion 地址" Style="{StaticResource LabelText}" />
+                                <TextBox x:Name="ClientAuthDomainBox" Margin="0,0,0,12" />
+                                <TextBlock Text="X25519 客户端私钥（52 位 base32）" Style="{StaticResource LabelText}" />
+                                <PasswordBox x:Name="ClientAuthKeyBox" Foreground="{StaticResource PrimaryBrush}" Background="#0D1319" BorderBrush="{StaticResource LineBrush}" Padding="12,10" />
+                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <Button Content="添加授权" Click="AddClientAuth_Click" />
+                                    <Button Content="导入 .auth_private" Margin="10,0,0,0" Click="ImportClientAuth_Click" />
+                                    <Button Content="导出所选" Margin="10,0,0,0" Click="ExportClientAuth_Click" />
+                                    <Button Content="删除所选" Margin="10,0,0,0" Click="RemoveClientAuth_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Padding="18">
+                            <StackPanel>
+                                <TextBlock Text="已保存的 Onion 授权" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12" />
+                                <ListBox x:Name="ClientAuthList" MinHeight="120" MaxHeight="300" DisplayMemberPath="." />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -227,11 +270,100 @@
                                 <TextBox x:Name="ExitCountryBox" Width="250" HorizontalAlignment="Left" MaxLength="2" />
                                 <CheckBox x:Name="WindowsProxyCheckBox" Content="Tor 连接成功后自动启用 Windows 当前用户 HTTP/HTTPS 代理" Margin="0,20,0,4" />
                                 <TextBlock Text="退出或 Tor 异常停止时，Orbot PC 会恢复此前保存的当前用户代理值。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" Margin="24,0,0,0" />
+                                <CheckBox x:Name="StartOnLoginCheckBox" Content="登录 Windows 后自动启动 Orbot PC" Margin="0,12,0,4" />
+                                <TextBlock Text="仅为当前 Windows 用户设置；关闭时恢复原有启动项。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" Margin="24,0,0,0" />
                                 <Button Content="保存设置" HorizontalAlignment="Left" Margin="0,20,0,0" Click="SaveSettings_Click" />
                             </StackPanel>
                         </Border>
+                        <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Padding="22" Margin="0,16,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Snowflake 志愿中继" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="开启后，本机将通过 WebRTC 中继其他 Tor 用户到 Tor 网桥的流量。每次最多服务 1 个客户端，会使用网络流量；只在你愿意提供中继时手动开启。" Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap" Margin="0,7,0,12" />
+                                <TextBlock x:Name="SnowflakeVolunteerStateText" Text="已停止" Foreground="{StaticResource SecondaryBrush}" FontSize="12" Margin="0,0,0,10" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="StartSnowflakeVolunteerButton" Content="启动志愿中继" Click="StartSnowflakeVolunteer_Click" />
+                                    <Button x:Name="StopSnowflakeVolunteerButton" Content="停止志愿中继" Margin="10,0,0,0" IsEnabled="False" Click="StopSnowflakeVolunteer_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Padding="22" Margin="0,16,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Tor 高级网络选项" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="这些选项直接写入 Tor 配置；空端口表示不启用。修改后会在保存时重启 Tor。" Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap" Margin="0,7,0,18" />
+                                <TextBlock Text="可选本机监听" Style="{StaticResource LabelText}" />
+                                <Grid Margin="0,7,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <StackPanel><TextBlock Text="DNS 端口（可选）" Style="{StaticResource LabelText}"/><TextBox x:Name="DnsPortBox" Text="0" /></StackPanel>
+                                    <StackPanel Grid.Column="2"><TextBlock Text="HTTP 隧道端口（可选）" Style="{StaticResource LabelText}"/><TextBox x:Name="HttpTunnelPortBox" Text="0" /></StackPanel>
+                                </Grid>
+                                <CheckBox x:Name="AutomapHostsCheckBox" Content="为 DNS 解析启用 AutomapHostsOnResolve" Margin="0,10,0,0" />
+                                <TextBlock Text="虚拟地址网络（VirtualAddrNetworkIPv4）" Style="{StaticResource LabelText}" Margin="0,12,0,7" />
+                                <TextBox x:Name="VirtualAddrNetworkBox" Text="10.192.0.0/10" Width="210" HorizontalAlignment="Left" />
+
+                                <TextBlock Text="路由与节点偏好" Style="{StaticResource LabelText}" Margin="0,18,0,7" />
+                                <TextBlock Text="入口节点（EntryNodes）" Style="{StaticResource LabelText}" />
+                                <TextBox x:Name="EntryNodesBox" Margin="0,0,0,9" />
+                                <TextBlock Text="排除节点（ExcludeNodes）" Style="{StaticResource LabelText}" />
+                                <TextBox x:Name="ExcludeNodesBox" Margin="0,0,0,9" />
+                                <TextBlock Text="排除出口节点（ExcludeExitNodes）" Style="{StaticResource LabelText}" />
+                                <TextBox x:Name="ExcludeExitNodesBox" Margin="0,0,0,9" />
+                                <TextBlock Text="可达地址（ReachableAddresses）" Style="{StaticResource LabelText}" />
+                                <TextBox x:Name="ReachableAddressesBox" />
+                                <TextBlock Text="按顺序：入口节点、排除节点、排除出口节点、可达地址；留空表示 Tor 默认。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                <CheckBox x:Name="StrictNodesCheckBox" Content="严格遵守节点选择（StrictNodes）" Margin="0,10,0,0" />
+
+                                <TextBlock Text="Tor 协议偏好（未设置 = Tor 默认）" Style="{StaticResource LabelText}" Margin="0,18,0,7" />
+                                <WrapPanel>
+                                    <CheckBox x:Name="ConnectionPaddingCheckBox" IsThreeState="True" Content="连接填充" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="CircuitPaddingCheckBox" IsThreeState="True" Content="电路填充" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="ReducedConnectionPaddingCheckBox" IsThreeState="True" Content="降低连接填充" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="ReducedCircuitPaddingCheckBox" IsThreeState="True" Content="降低电路填充" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="ClientUseIPv4CheckBox" IsThreeState="True" Content="允许 IPv4" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="ClientUseIPv6CheckBox" IsThreeState="True" Content="允许 IPv6" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="PreferIPv6CheckBox" IsThreeState="True" Content="优先 IPv6" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="IPv6TrafficCheckBox" IsThreeState="True" Content="启用 IPv6 流量" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="NoIPv4TrafficCheckBox" IsThreeState="True" Content="禁止 IPv4 流量" Margin="0,0,18,8" />
+                                </WrapPanel>
+                                <TextBlock Text="SOCKS 隔离（仅对本机 SOCKS5 监听生效）" Style="{StaticResource LabelText}" Margin="0,10,0,7" />
+                                <WrapPanel>
+                                    <CheckBox x:Name="IsolateDestAddrCheckBox" Content="按目标地址隔离" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="IsolateDestPortCheckBox" Content="按目标端口隔离" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="IsolateClientProtocolCheckBox" Content="按客户端协议隔离" Margin="0,0,18,8" />
+                                    <CheckBox x:Name="KeepAliveIsolateSocksAuthCheckBox" Content="保持 SOCKS 授权隔离" Margin="0,0,18,8" />
+                                </WrapPanel>
+
+                                <TextBlock Text="Tor 出站代理（可选）" Style="{StaticResource LabelText}" Margin="0,10,0,7" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+                                    <StackPanel><TextBlock Text="代理类型" Style="{StaticResource LabelText}"/><ComboBox x:Name="OutboundProxyTypeCombo" SelectedIndex="0">
+                                        <ComboBoxItem Tag="none">无</ComboBoxItem>
+                                        <ComboBoxItem Tag="https">HTTPS</ComboBoxItem>
+                                        <ComboBoxItem Tag="socks4">SOCKS4</ComboBoxItem>
+                                        <ComboBoxItem Tag="socks5">SOCKS5</ComboBoxItem>
+                                    </ComboBox></StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="10,0"><TextBlock Text="代理主机或 IP" Style="{StaticResource LabelText}"/><TextBox x:Name="OutboundProxyHostBox" /></StackPanel>
+                                    <StackPanel Grid.Column="2"><TextBlock Text="端口" Style="{StaticResource LabelText}"/><TextBox x:Name="OutboundProxyPortBox" /></StackPanel>
+                                </Grid>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <StackPanel><TextBlock Text="代理用户名（可选）" Style="{StaticResource LabelText}" /><TextBox x:Name="OutboundProxyUsernameBox" /></StackPanel>
+                                    <StackPanel Grid.Column="2"><TextBlock Text="代理密码（可选）" Style="{StaticResource LabelText}" /><PasswordBox x:Name="OutboundProxyPasswordBox" Foreground="{StaticResource PrimaryBrush}" Background="#0D1319" BorderBrush="{StaticResource LineBrush}" Padding="12,10" /></StackPanel>
+                                </Grid>
+                                <TextBlock Text="代理类型、主机和端口需同时填写；密码仅在本地设置文件中保存。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+
+                                <TextBlock Text="Smart Connect 回退顺序" Style="{StaticResource LabelText}" Margin="0,18,0,7" />
+                                <CheckBox x:Name="EnableSmartConnectCheckBox" Content="连接失败时启用回退规划器" />
+                                <TextBox x:Name="SmartConnectModesBox" Text="none,snowflake,snowflake-amp,obfs4" Margin="0,7,0,0" />
+                                <TextBlock Text="可用值：none、snowflake、snowflake-amp、obfs4、meek、webtunnel、custom。顺序用逗号分隔。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                <TextBlock Text="回退等待时间（秒）" Style="{StaticResource LabelText}" Margin="0,12,0,7" />
+                                <TextBox x:Name="SmartConnectFallbackSecondsBox" Text="90" Width="140" HorizontalAlignment="Left" />
+                                <Border Background="#171D23" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,18,0,0">
+                                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource SecondaryBrush}" FontSize="12">Windows 版本使用本机 SOCKS5 / HTTP 代理；应用需支持 SOCKS5 或遵循 Windows 用户代理设置。</TextBlock>
+                                </Border>
+                            </StackPanel>
+                        </Border>
                         <Border Background="#121A21" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16,0,0">
-                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource SecondaryBrush}" FontSize="12">这个 Windows 版本使用 Tor Expert Bundle；它不调用 Android VPN、按应用包名路由或通知接口。全系统透明代理和按进程分流需要另行安装并授权 Windows TUN/WFP 服务。</TextBlock>
+                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource SecondaryBrush}" FontSize="12">Windows 版本使用 Tor Expert Bundle 和用户态本机代理，不安装驱动，也不接管其他应用流量。</TextBlock>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

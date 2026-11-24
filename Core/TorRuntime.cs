@@ -174,9 +174,14 @@ public sealed class TorRuntime : IAsyncDisposable
 
     private void WriteConfiguration(OrbotSettings settings)
     {
+        settings.ValidateAdvanced();
+        var bridgeMode = (settings.BridgeMode ?? "none").Trim().ToLowerInvariant();
+        if (bridgeMode is not ("none" or "obfs4" or "snowflake" or "snowflake-amp" or "meek" or "webtunnel" or "dnstt" or "custom"))
+            throw new InvalidOperationException($"Unsupported bridge mode: {settings.BridgeMode}.");
         var runtimeRoot = Path.Combine(_basePath, "runtime", "tor");
         var runtimeData = Path.Combine(runtimeRoot, "data");
         var ptDir = Path.Combine(runtimeRoot, "tor", "pluggable_transports");
+        Directory.CreateDirectory(Path.Combine(_dataPath, "client-onion-auth"));
         var lines = new List<string>
         {
             "AvoidDiskWrites 1",
@@ -186,18 +191,24 @@ public sealed class TorRuntime : IAsyncDisposable
             $"GeoIPv6File {Quote(Path.Combine(runtimeData, "geoip6"))}",
             $"ClientTransportPlugin meek_lite,obfs2,obfs3,obfs4,scramblesuit,webtunnel exec {ExecPath(Path.Combine(ptDir, "lyrebird.exe"))}",
             $"ClientTransportPlugin snowflake exec {ExecPath(Path.Combine(ptDir, "lyrebird.exe"))}",
+            $"ClientTransportPlugin dnstt exec {ExecPath(Path.Combine(_basePath, "runtime", "dnstt", "dnstt-client.exe"))}",
             $"ClientTransportPlugin conjure exec {ExecPath(Path.Combine(ptDir, "conjure-client.exe"))} -registerURL https://registration.refraction.network/api",
             $"DataDirectory {Quote(_dataPath)}",
+            $"ClientOnionAuthDir {Quote(Path.Combine(_dataPath, "client-onion-auth"))}",
             $"PidFile {Quote(Path.Combine(_dataPath, "tor.pid"))}",
-            $"SocksPort 127.0.0.1:{settings.SocksPort}",
+            $"SocksPort 127.0.0.1:{settings.SocksPort}{FormatListenerOptions(settings, includeIpv6: true)}",
             $"ControlPort 127.0.0.1:{settings.ControlPort}",
             "CookieAuthentication 1",
             $"CookieAuthFile {Quote(Path.Combine(_dataPath, "control_auth_cookie"))}"
         };
         if (settings.DisableNetwork) lines.Add("DisableNetwork 1");
 
+        AddOptionalListeners(lines, settings);
+        AddTorRoutingOptions(lines, settings);
+        AddOutboundProxy(lines, settings);
+
         var bridgeLines = ResolveBridgeLines(settings);
-        if (settings.BridgeMode != "none")
+        if (bridgeMode != "none")
         {
             if (bridgeLines.Count == 0) throw new InvalidOperationException("No bridge lines are available for the selected bridge mode.");
             lines.Add("UseBridges 1");
@@ -232,22 +243,170 @@ public sealed class TorRuntime : IAsyncDisposable
         File.WriteAllLines(_configPath, lines, new UTF8Encoding(false));
     }
 
+    private static void AddOptionalListeners(ICollection<string> lines, OrbotSettings settings)
+    {
+        if (settings.DnsPort > 0)
+        {
+            lines.Add($"DNSPort 127.0.0.1:{settings.DnsPort}{FormatIsolation(settings)}");
+            lines.Add("VirtualAddrNetworkIPv4 " + settings.VirtualAddrNetwork);
+            if (settings.AutomapHostsOnResolve)
+            {
+                lines.Add("AutomapHostsOnResolve 1");
+            }
+        }
+        if (settings.TransPort > 0) lines.Add($"TransPort 127.0.0.1:{settings.TransPort}{FormatListenerOptions(settings, includeIpv6: true)}");
+        if (settings.HttpTunnelPort > 0) lines.Add($"HTTPTunnelPort 127.0.0.1:{settings.HttpTunnelPort}{FormatListenerOptions(settings, includeIpv6: true)}");
+    }
+
+    private static void AddTorRoutingOptions(ICollection<string> lines, OrbotSettings settings)
+    {
+        AddIfPresent(lines, "EntryNodes", settings.EntryNodes);
+        AddIfPresent(lines, "ExcludeNodes", settings.ExcludeNodes);
+        AddIfPresent(lines, "ExcludeExitNodes", settings.ExcludeExitNodes);
+        AddIfPresent(lines, "ReachableAddresses", settings.ReachableAddresses);
+        if (settings.StrictNodes) lines.Add("StrictNodes 1");
+        AddNullableBoolean(lines, "ConnectionPadding", settings.ConnectionPadding);
+        AddNullableBoolean(lines, "CircuitPadding", settings.CircuitPadding);
+        AddNullableBoolean(lines, "ReducedConnectionPadding", settings.ReducedConnectionPadding);
+        AddNullableBoolean(lines, "ReducedCircuitPadding", settings.ReducedCircuitPadding);
+        AddNullableBoolean(lines, "ClientUseIPv4", settings.ClientUseIPv4);
+        AddNullableBoolean(lines, "ClientUseIPv6", settings.ClientUseIPv6);
+    }
+
+    private static string FormatListenerOptions(OrbotSettings settings, bool includeIpv6)
+    {
+        var options = IsolationOptions(settings);
+        if (includeIpv6)
+        {
+            if (settings.IPv6Traffic == true) options.Add("IPv6Traffic");
+            if (settings.PreferIPv6 == true) options.Add("PreferIPv6");
+            if (settings.NoIPv4Traffic == true) options.Add("NoIPv4Traffic");
+        }
+        return FormatOptions(options);
+    }
+
+    private static string FormatIsolation(OrbotSettings settings) => FormatOptions(IsolationOptions(settings));
+
+    private static string FormatOptions(IReadOnlyList<string> options) =>
+        options.Count == 0 ? string.Empty : " " + string.Join(" ", options);
+
+    private static List<string> IsolationOptions(OrbotSettings settings)
+    {
+        var options = new List<string>();
+        if (settings.IsolateDestAddr == true) options.Add("IsolateDestAddr");
+        if (settings.IsolateDestPort == true) options.Add("IsolateDestPort");
+        if (settings.IsolateClientProtocol == true) options.Add("IsolateClientProtocol");
+        if (settings.KeepAliveIsolateSocksAuth == true) options.Add("KeepAliveIsolateSOCKSAuth");
+        return options;
+    }
+
+    private static void AddOutboundProxy(ICollection<string> lines, OrbotSettings settings)
+    {
+        var type = (settings.OutboundProxyType ?? "none").Trim().ToLowerInvariant();
+        if (type == "none") return;
+        var endpoint = FormatEndpoint(settings.OutboundProxyHost, settings.OutboundProxyPort);
+        switch (type)
+        {
+            case "https":
+                lines.Add($"HTTPSProxy {endpoint}");
+                if (!string.IsNullOrWhiteSpace(settings.OutboundProxyUsername) || !string.IsNullOrWhiteSpace(settings.OutboundProxyPassword))
+                    lines.Add($"HTTPSProxyAuthenticator {Quote(settings.OutboundProxyUsername + ":" + settings.OutboundProxyPassword)}");
+                break;
+            case "socks4":
+                lines.Add($"Socks4Proxy {endpoint}");
+                break;
+            case "socks5":
+                lines.Add($"Socks5Proxy {endpoint}");
+                if (!string.IsNullOrWhiteSpace(settings.OutboundProxyUsername)) lines.Add($"Socks5ProxyUsername {Quote(settings.OutboundProxyUsername)}");
+                if (!string.IsNullOrWhiteSpace(settings.OutboundProxyPassword)) lines.Add($"Socks5ProxyPassword {Quote(settings.OutboundProxyPassword)}");
+                break;
+        }
+    }
+
+    private static void AddIfPresent(ICollection<string> lines, string name, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) lines.Add($"{name} {value.Trim()}");
+    }
+
+    private static void AddNullableBoolean(ICollection<string> lines, string name, bool? value)
+    {
+        if (value.HasValue) lines.Add($"{name} {(value.Value ? 1 : 0)}");
+    }
+
+    private static string FormatEndpoint(string host, int port)
+    {
+        var normalizedHost = host.Trim();
+        if (normalizedHost.Contains(':') && !normalizedHost.StartsWith("[", StringComparison.Ordinal)) normalizedHost = "[" + normalizedHost + "]";
+        return normalizedHost + ":" + port;
+    }
+
     private IReadOnlyList<string> ResolveBridgeLines(OrbotSettings settings)
     {
+        var mode = (settings.BridgeMode ?? "none").Trim().ToLowerInvariant();
         var custom = settings.CustomBridges.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => line.Length <= 2048 && !line.Contains('"') && !line.StartsWith('#'))
             .ToList();
-        if (custom.Count > 0) return custom;
+        if (mode == "custom")
+        {
+            ValidateBridgeTransports(custom);
+            return custom;
+        }
+        if (mode == "snowflake-amp")
+        {
+            if (custom.Count > 0)
+                return AmpBridgeBuilder.BuildMany(custom);
+
+            var bundledSnowflakeBridges = ReadBundledBridgeLines("snowflake");
+            return AmpBridgeBuilder.BuildMany(bundledSnowflakeBridges);
+        }
+        if (mode == "dnstt")
+        {
+            if (custom.Count == 0) return ReadBundledBridgeLines(mode);
+            ValidateBridgeTransports(custom);
+            var matchingDnstt = custom.Where(line => line.StartsWith("dnstt ", StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matchingDnstt.Length == 0) throw new InvalidOperationException("The supplied bridge lines do not contain DNSTT bridges.");
+            return matchingDnstt;
+        }
+        if (custom.Count > 0)
+        {
+            var expectedPrefix = mode switch
+            {
+                "obfs4" => "obfs4 ",
+                "snowflake" => "snowflake ",
+                "meek" => "meek_lite ",
+                "webtunnel" => "webtunnel ",
+                _ => string.Empty
+            };
+            var matching = custom.Where(line => line.StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matching.Length == 0)
+                throw new InvalidOperationException($"The supplied bridge lines do not match the selected {mode} transport.");
+            return matching;
+        }
+        return ReadBundledBridgeLines(mode);
+    }
+
+    private IReadOnlyList<string> ReadBundledBridgeLines(string mode)
+    {
         var ptConfig = Path.Combine(_basePath, "runtime", "tor", "tor", "pluggable_transports", "pt_config.json");
         if (!File.Exists(ptConfig)) return [];
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(ptConfig));
-            if (doc.RootElement.TryGetProperty("bridges", out var bridges) && bridges.TryGetProperty(settings.BridgeMode, out var items))
+            if (doc.RootElement.TryGetProperty("bridges", out var bridges) && bridges.TryGetProperty(mode, out var items))
                 return items.EnumerateArray().Select(item => item.GetString() ?? "").Where(line => line.Length > 0).ToList();
         }
         catch (JsonException) { }
         return [];
+    }
+
+    private static void ValidateBridgeTransports(IEnumerable<string> bridgeLines)
+    {
+        foreach (var line in bridgeLines)
+        {
+            var transport = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant();
+            if (transport is not ("obfs4" or "obfs2" or "obfs3" or "scramblesuit" or "meek_lite" or "webtunnel" or "snowflake" or "conjure" or "dnstt"))
+                throw new InvalidOperationException($"Unsupported pluggable transport in bridge line: {transport ?? "empty"}.");
+        }
     }
 
     // Regular Tor path options use escaped Windows backslashes inside quotes.
