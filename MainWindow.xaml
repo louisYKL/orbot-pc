@@ -50,7 +50,7 @@
                         <Image Source="orbot-logo.png" Width="36" Height="36" Stretch="Uniform" Margin="0,0,12,0" />
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Orbot PC" FontSize="17" FontWeight="SemiBold" />
-                            <TextBlock Text="Windows · 0.3.0" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,2,0,0" />
+                            <TextBlock Text="Windows · 0.3.1" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,2,0,0" />
                         </StackPanel>
                     </StackPanel>
                     <TextBlock Text="NETWORK" Foreground="#667482" FontSize="10" FontWeight="SemiBold" Margin="12,0,0,8" />
@@ -152,6 +152,17 @@
                             <StackPanel Grid.Column="2"><TextBlock Text="桥接模式" Style="{StaticResource LabelText}"/><TextBlock x:Name="BridgeState" Text="直连" FontSize="14"/></StackPanel>
                             <StackPanel Grid.Column="4"><TextBlock Text="Windows 代理" Style="{StaticResource LabelText}"/><TextBlock x:Name="ProxyState" Text="未启用" FontSize="14"/></StackPanel>
                         </Grid>
+                        <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="TUN 虚拟网卡模式" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="TunStatusText" Text="未启用" Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,6,0,0" />
+                                    <TextBlock Text="可选接管设备 TCP 流量并经 Tor 转发。需要管理员权限；UDP 不支持。正常停止时由 sing-box 清理路由；异常退出后的路由恢复尚未验证。此功能尚未在真实网卡环境验证。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                </StackPanel>
+                                <Button x:Name="TunButton" Grid.Column="2" Content="启动 TUN" VerticalAlignment="Center" IsEnabled="False" Click="Tun_Click" />
+                            </Grid>
+                        </Border>
                         <Border Background="#111820" BorderBrush="#26313C" BorderThickness="1" CornerRadius="8" Padding="15,12" Margin="0,0,0,12">
                             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource SecondaryBrush}" FontSize="12">
                                 Windows 版通过 SOCKS5 / HTTP 代理工作。系统代理只影响遵循 Windows 用户代理设置的应用；它不会自动代理所有应用或系统服务。
@@ -349,7 +360,7 @@
                                     <StackPanel><TextBlock Text="代理用户名（可选）" Style="{StaticResource LabelText}" /><TextBox x:Name="OutboundProxyUsernameBox" /></StackPanel>
                                     <StackPanel Grid.Column="2"><TextBlock Text="代理密码（可选）" Style="{StaticResource LabelText}" /><PasswordBox x:Name="OutboundProxyPasswordBox" Foreground="{StaticResource PrimaryBrush}" Background="#0D1319" BorderBrush="{StaticResource LineBrush}" Padding="12,10" /></StackPanel>
                                 </Grid>
-                                <TextBlock Text="代理类型、主机和端口需同时填写；密码仅在本地设置文件中保存。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                <TextBlock Text="代理类型、主机和端口需同时填写；密码仅在本地设置文件中保存。未填写时会尝试检测 Windows 当前代理中的本机 SOCKS5 上游。" Foreground="{StaticResource SecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
 
                                 <TextBlock Text="Smart Connect 回退顺序" Style="{StaticResource LabelText}" Margin="0,18,0,7" />
                                 <CheckBox x:Name="EnableSmartConnectCheckBox" Content="连接失败时启用回退规划器" />
@@ -363,7 +374,7 @@
                             </StackPanel>
                         </Border>
                         <Border Background="#121A21" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16,0,0">
-                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource SecondaryBrush}" FontSize="12">Windows 版本使用 Tor Expert Bundle 和用户态本机代理，不安装驱动，也不接管其他应用流量。</TextBlock>
+                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource SecondaryBrush}" FontSize="12">Windows 版本提供本机代理和可选 TUN 模式；TUN 默认关闭，修改系统路由并阻断 UDP，尚未经过真实网卡验证。</TextBlock>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

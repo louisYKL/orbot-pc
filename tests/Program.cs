@@ -6,7 +6,8 @@ using System.IO;
 using System.Text;
 using System.Globalization;
 
-if (args.Length != 1) throw new ArgumentException("Pass the Orbot PC project root as the only argument.");
+if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] != "--live-real-tor"))
+    throw new ArgumentException("Pass the Orbot PC project root and optionally --live-real-tor.");
 var root = Path.GetFullPath(args[0]);
 AmpBridgeBuilderTests.Run();
 await MoatClientTests.RunAsync();
@@ -14,6 +15,7 @@ ClientOnionAuthTests.Run(Path.Combine(root, ".data", "client-onion-auth-tests"))
 OnionServiceBackupTests.Run(Path.Combine(root, ".data", "onion-service-backup-tests"));
 MoatTunnelRuntimeTests.Run();
 WindowsStartupControllerTests.Run(Path.Combine(root, ".data", "windows-startup-tests"));
+TunRuntimeTests.Run(root);
 await SnowflakeVolunteerRuntimeTests.RunAsync(root);
 Check(new OrbotSettings().UseWindowsProxy, "Windows proxy should be enabled automatically after Tor bootstrap by default.");
 Console.WriteLine("PASS automatic Windows proxy default");
@@ -139,6 +141,7 @@ await VerifyHttpProxyAsync();
 Console.WriteLine("PASS local HTTP absolute-form request through SOCKS5");
 await VerifyConnectTunnelAsync();
 Console.WriteLine("PASS local HTTP CONNECT tunnel through SOCKS5");
+if (args.Length == 2) await LiveTorProxyTest.RunAsync(root);
 
 static async Task VerifyHttpProxyAsync()
 {

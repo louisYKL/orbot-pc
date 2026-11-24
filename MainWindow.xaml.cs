@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private readonly WindowsStartupController _startupController;
     private readonly TorRuntime _tor;
     private readonly WindowsProxyController _windowsProxy;
+    private TunRuntime? _tun;
     private readonly SnowflakeVolunteerRuntime _snowflakeVolunteer;
     private readonly DispatcherTimer _monitorTimer;
     private readonly ObservableCollection<ServiceView> _serviceRows = [];
@@ -82,6 +83,13 @@ public partial class MainWindow : Window
 
         LoadSettings();
         EnsureAvailablePorts();
+        _tun = new TunRuntime(_basePath, _settings.SocksPort);
+        if (_tun.CleanupUnconfirmed)
+        {
+            TunStatusText.Text = T("TUN 状态未确认，请检查网络或重启 Windows");
+            TunButton.Content = T("TUN 状态未确认");
+            TunButton.IsEnabled = false;
+        }
         RefreshClientAuthList();
         ServicesList.ItemsSource = _serviceRows;
         RefreshServices();
@@ -373,12 +381,14 @@ public partial class MainWindow : Window
     {
         if (_tor.IsRunning)
         {
-            await StopTorAsync();
+            try { await StopTorAsync(); }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, T("无法停止 TUN"), MessageBoxButton.OK, MessageBoxImage.Error); }
             return;
         }
         try
         {
             _settings = ReadSettingsFromUi();
+            await DetectTorUpstreamProxyAsync();
             ApplyStartupSetting(_settings.StartOnLogin);
             _smartConnectPlanner = _settings.EnableSmartConnect
                 ? new SmartConnectPlanner(_settings.SmartConnectModes)
@@ -407,6 +417,7 @@ public partial class MainWindow : Window
             ConnectButton.Content = "断开连接";
             NewIdentityButton.IsEnabled = true;
             SystemProxyButton.IsEnabled = true;
+            TunButton.IsEnabled = false;
             _pollCount = 0;
             _monitorTimer.Start();
             await PollTorAsync();
@@ -427,6 +438,7 @@ public partial class MainWindow : Window
         _monitorTimer.Stop();
         try
         {
+            await StopTunAsync();
             try
             {
                 if (_windowsProxy.Disable()) AppendLog("Windows user proxy restored to its previous values.");
@@ -460,7 +472,33 @@ public partial class MainWindow : Window
         _httpProxy.Start();
     }
 
-    private async void MonitorTimer_Tick(object? sender, EventArgs e) => await PollTorAsync();
+    private async Task DetectTorUpstreamProxyAsync()
+    {
+        if (!string.Equals(_settings.OutboundProxyType, "none", StringComparison.OrdinalIgnoreCase)) return;
+        var excludedPorts = new HashSet<int> { _settings.SocksPort, _settings.HttpPort, _settings.ControlPort };
+        var upstream = await WindowsProxyController.DetectLoopbackSocks5Async(excludedPorts);
+        if (upstream is not { } proxy) return;
+        _settings.OutboundProxyType = "socks5";
+        _settings.OutboundProxyHost = proxy.Host;
+        _settings.OutboundProxyPort = proxy.Port;
+        AppendLog($"Detected a reachable loopback SOCKS5 proxy at {proxy.Host}:{proxy.Port}; using it as Tor's upstream.");
+    }
+
+    private async void MonitorTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_tun is { IsRunning: false, CleanupUnconfirmed: false })
+        {
+            try { await StopTunAsync(); }
+            catch (Exception ex)
+            {
+                TunStatusText.Text = T("TUN 状态未确认，请检查网络或重启 Windows");
+                TunButton.Content = T("TUN 状态未确认");
+                TunButton.IsEnabled = false;
+                AppendLog("TUN process exited unexpectedly; cleanup could not be confirmed: " + ex.Message);
+            }
+        }
+        await PollTorAsync();
+    }
 
     private async Task PollTorAsync()
     {
@@ -483,6 +521,7 @@ public partial class MainWindow : Window
             }
             if (progress >= 100)
             {
+                TunButton.IsEnabled = _tun?.CleanupUnconfirmed != true;
                 if (_smartConnectPlanner is not null)
                 {
                     AppendLog("Smart Connect succeeded using " + _settings.BridgeMode + ".");
@@ -653,6 +692,15 @@ public partial class MainWindow : Window
         _monitorTimer.Stop();
         try
         {
+            try { await StopTunAsync(); }
+            catch (Exception ex)
+            {
+                AppendLog("TUN cleanup after unexpected Tor exit failed: " + ex.Message);
+                var cleanupUnconfirmed = _tun?.CleanupUnconfirmed == true;
+                TunStatusText.Text = T(cleanupUnconfirmed ? "TUN 状态未确认，请检查网络或重启 Windows" : "TUN 仍在运行，请手动停止");
+                TunButton.Content = T(cleanupUnconfirmed ? "TUN 状态未确认" : "停止 TUN");
+                TunButton.IsEnabled = !cleanupUnconfirmed && _tun is { IsRunning: true };
+            }
             try { _windowsProxy.Disable(); } catch (Exception ex) { AppendLog("Proxy recovery after Tor exit failed: " + ex.Message); }
             if (_httpProxy is not null)
             {
@@ -670,6 +718,7 @@ public partial class MainWindow : Window
             ConnectButton.IsEnabled = true;
             NewIdentityButton.IsEnabled = false;
             SystemProxyButton.IsEnabled = false;
+            TunButton.IsEnabled = _tun is { CleanupUnconfirmed: false, IsRunning: true };
         }
     }
 
@@ -793,6 +842,85 @@ public partial class MainWindow : Window
         catch (Exception ex) { MessageBox.Show(this, ex.Message, T("Windows 代理设置失败"), MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
+    private async void Tun_Click(object sender, RoutedEventArgs e)
+    {
+        if (_tun is not null)
+        {
+            if (_tun.CleanupUnconfirmed)
+            {
+                MessageBox.Show(this, T("TUN 进程异常退出，Windows 路由清理状态无法确认。退出应用不会修复路由；请在继续使用网络前检查网络设置，必要时重启 Windows。"),
+                    T("TUN 状态未确认"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            try
+            {
+                await StopTunAsync();
+                AppendLog("Windows TUN routing stopped.");
+            }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, T("TUN 停止失败"), MessageBoxButton.OK, MessageBoxImage.Error); }
+            return;
+        }
+
+        try
+        {
+            if (!_tor.IsRunning || _lastBootstrapProgress < 100)
+                throw new InvalidOperationException(T("请先等待 Tor 连接完成，再启动 TUN。"));
+            var answer = MessageBox.Show(this,
+                T("TUN 会接管设备 TCP 默认路由，并将 Tor 与桥接进程排除在隧道外。UDP 不支持；此功能未经真实网卡测试。继续启动吗？"),
+                T("启动 TUN 虚拟网卡"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (answer != MessageBoxResult.Yes) return;
+
+            TunButton.IsEnabled = false;
+            TunStatusText.Text = T("正在启动 TUN…");
+            _tun = new TunRuntime(_basePath, _settings.SocksPort);
+            _tun.LogMessage += message => Dispatcher.BeginInvoke(() => AppendLog(message));
+            await _tun.StartAsync();
+            TunStatusText.Text = T("TUN 已启动（TCP）");
+            TunButton.Content = T("停止 TUN");
+            AppendLog("Windows TUN routing started.");
+        }
+        catch (Exception ex)
+        {
+            TunStatusText.Text = T("TUN 启动失败");
+            AppendLog("Windows TUN start failed: " + ex.Message);
+            MessageBox.Show(this, ex.Message, T("TUN 启动失败"), MessageBoxButton.OK, MessageBoxImage.Error);
+            if (_tun is not null)
+            {
+                try
+                {
+                    await _tun.DisposeAsync();
+                    if (_tun.CleanupUnconfirmed)
+                    {
+                        TunButton.Content = T("TUN 状态未确认");
+                        TunStatusText.Text = T("TUN 状态未确认，请检查网络或重启 Windows");
+                    }
+                    else _tun = null;
+                }
+                catch (Exception cleanupError)
+                {
+                    TunButton.Content = T("停止 TUN");
+                    TunStatusText.Text = T("TUN 清理失败，请重试停止");
+                    AppendLog("TUN start cleanup failed: " + cleanupError.Message);
+                }
+            }
+        }
+        finally { TunButton.IsEnabled = _tun?.CleanupUnconfirmed != true && _tor.IsRunning && _lastBootstrapProgress >= 100; }
+    }
+
+    private async Task StopTunAsync()
+    {
+        if (_tun is null) return;
+        if (_tun.CleanupUnconfirmed && _tun.IsRunning)
+            throw new InvalidOperationException(T("TUN 状态未确认，请检查网络或重启 Windows"));
+        if (_tun.CleanupUnconfirmed) return;
+        await _tun.StopAsync();
+        await _tun.DisposeAsync();
+        _tun = null;
+        TunButton.Content = T("启动 TUN");
+        TunStatusText.Text = T("TUN 已停止");
+        TunButton.IsEnabled = false;
+    }
+
     private void CopySocks_Click(object sender, RoutedEventArgs e)
     {
         Clipboard.SetText($"socks5://127.0.0.1:{_settings.SocksPort}");
@@ -806,6 +934,8 @@ public partial class MainWindow : Window
             var wasRunning = _tor.IsRunning;
             var proxyWasEnabled = _windowsProxy.IsEnabled;
             _settings = ReadSettingsFromUi();
+            await DetectTorUpstreamProxyAsync();
+            if (wasRunning) await StopTunAsync();
             ApplyStartupSetting(_settings.StartOnLogin);
             SaveSettingsToDisk();
             UpdateEndpoints();
@@ -1283,7 +1413,18 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (_closing) return;
         _closing = true;
-        await StopTorAsync();
+        if (_tun?.CleanupUnconfirmed == true)
+            MessageBox.Show(this,
+                T("TUN 进程异常退出，Windows 路由清理状态无法确认。退出应用不会修复路由；请在继续使用网络前检查网络设置，必要时重启 Windows。"),
+                T("TUN 状态未确认"), MessageBoxButton.OK, MessageBoxImage.Warning);
+        try { await StopTorAsync(); }
+        catch (Exception ex)
+        {
+            _closing = false;
+            MessageBox.Show(this, ex.Message, T("无法安全关闭 TUN"), MessageBoxButton.OK, MessageBoxImage.Error);
+            TunButton.IsEnabled = _tun is { CleanupUnconfirmed: false, IsRunning: true };
+            return;
+        }
         await _snowflakeVolunteer.DisposeAsync();
         try { _windowsProxy.Disable(); } catch { }
         await _tor.DisposeAsync();

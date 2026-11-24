@@ -1,5 +1,7 @@
 using Microsoft.Win32;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -78,6 +80,68 @@ public sealed class WindowsProxyController
     {
         if (!File.Exists(_backupPath) || !IsEnabled) return;
         Disable();
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public static async Task<(string Host, int Port)?> DetectLoopbackSocks5Async(
+        IReadOnlySet<int>? excludedPorts = null, CancellationToken cancellationToken = default)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(InternetSettingsPath, writable: false);
+        if (key?.GetValue("ProxyEnable") is not int enabled || enabled != 1) return null;
+        if (key.GetValue("ProxyServer") is not string configured || string.IsNullOrWhiteSpace(configured)) return null;
+
+        foreach (var entry in configured.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = entry.IndexOf('=');
+            if (separator >= 0 && !entry[..separator].Equals("socks", StringComparison.OrdinalIgnoreCase)) continue;
+            var endpoint = separator >= 0 ? entry[(separator + 1)..].Trim() : entry;
+            if (!TryParseLoopbackEndpoint(endpoint, out var host, out var address, out var port)) continue;
+            if (excludedPorts?.Contains(port) == true) continue;
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(1));
+            try
+            {
+                using var client = new TcpClient(address.AddressFamily);
+                await client.ConnectAsync(address, port, timeout.Token);
+                await using var stream = client.GetStream();
+                await stream.WriteAsync(new byte[] { 5, 1, 0 }, timeout.Token);
+                var reply = new byte[2];
+                await stream.ReadExactlyAsync(reply, timeout.Token);
+                if (reply[0] == 5 && reply[1] == 0) return (host, port);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
+            catch (SocketException) { }
+            catch (IOException) { }
+        }
+        return null;
+    }
+
+    private static bool TryParseLoopbackEndpoint(string endpoint, out string host, out IPAddress address, out int port)
+    {
+        host = "";
+        address = IPAddress.None;
+        port = 0;
+        string portText;
+        if (endpoint.StartsWith("[", StringComparison.Ordinal))
+        {
+            var end = endpoint.IndexOf(']');
+            if (end < 0 || end + 1 >= endpoint.Length || endpoint[end + 1] != ':') return false;
+            host = endpoint[1..end];
+            portText = endpoint[(end + 2)..];
+        }
+        else
+        {
+            var separator = endpoint.LastIndexOf(':');
+            if (separator <= 0) return false;
+            host = endpoint[..separator];
+            portText = endpoint[(separator + 1)..];
+        }
+        if (!IPAddress.TryParse(host, out var parsedAddress) || parsedAddress is null || !IPAddress.IsLoopback(parsedAddress) ||
+            !int.TryParse(portText, out port) || port is < 1 or > 65535) return false;
+        address = parsedAddress;
+        host = address.ToString();
+        return true;
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]

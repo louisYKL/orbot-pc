@@ -188,7 +188,29 @@ public static class UiLocalization
             ["可用值：none、snowflake、snowflake-amp、obfs4、meek、webtunnel、custom。顺序用逗号分隔。"] = ("Values: none, snowflake, snowflake-amp, obfs4, meek, webtunnel, dnstt, custom. Separate modes with commas.", "Значения: none, snowflake, snowflake-amp, obfs4, meek, webtunnel, dnstt, custom. Разделяйте режимы запятыми."),
             ["回退等待时间（秒）"] = ("Fallback wait (seconds)", "Ожидание отката (секунды)"),
             ["Windows 版本使用本机 SOCKS5 / HTTP 代理；应用需支持 SOCKS5 或遵循 Windows 用户代理设置。"] = ("The Windows client uses local SOCKS5 and HTTP proxies; applications must support SOCKS5 or honor Windows user proxy settings.", "Клиент Windows использует локальные прокси SOCKS5 и HTTP; приложения должны поддерживать SOCKS5 или учитывать настройки прокси Windows."),
-            ["Windows 版本使用 Tor Expert Bundle 和用户态本机代理，不安装驱动，也不接管其他应用流量。"] = ("The Windows client uses the Tor Expert Bundle and local user-mode proxies; it installs no driver and does not capture other applications' traffic.", "Клиент Windows использует Tor Expert Bundle и локальные прокси; он не устанавливает драйвер и не перехватывает трафик других приложений.")
+            ["Windows 版本使用 Tor Expert Bundle 和用户态本机代理，不安装驱动，也不接管其他应用流量。"] = ("The Windows client uses the Tor Expert Bundle and local user-mode proxies; it installs no driver and does not capture other applications' traffic.", "Клиент Windows использует Tor Expert Bundle и локальные прокси; он не устанавливает драйвер и не перехватывает трафик других приложений."),
+            ["TUN 虚拟网卡模式"] = ("TUN virtual adapter", "Виртуальный адаптер TUN"),
+            ["TUN 会接管设备 TCP 默认路由，并将 Tor 与桥接进程排除在隧道外。UDP 不支持；此功能未经真实网卡测试。继续启动吗？"] = ("TUN takes over the device's default TCP route and excludes Tor and bridge processes. UDP is unsupported; this feature has not been tested with a live adapter. Continue?", "TUN перехватывает основной TCP-маршрут устройства, исключая Tor и мосты. UDP не поддерживается; режим не проверен на реальном адаптере. Продолжить?"),
+            ["启动 TUN 虚拟网卡"] = ("Start TUN virtual adapter", "Запустить виртуальный адаптер TUN"),
+            ["启动 TUN"] = ("Start TUN", "Запустить TUN"),
+            ["停止 TUN"] = ("Stop TUN", "Остановить TUN"),
+            ["TUN 已停止"] = ("TUN stopped", "TUN остановлен"),
+            ["TUN 已启动（TCP）"] = ("TUN active (TCP)", "TUN активен (TCP)"),
+            ["正在启动 TUN…"] = ("Starting TUN…", "Запуск TUN…"),
+            ["TUN 启动失败"] = ("TUN failed to start", "Не удалось запустить TUN"),
+            ["TUN 停止失败"] = ("TUN failed to stop", "Не удалось остановить TUN"),
+            ["请先等待 Tor 连接完成，再启动 TUN。"] = ("Wait for Tor to connect before starting TUN.", "Перед запуском TUN дождитесь подключения Tor."),
+            ["TUN 会接管设备 TCP 默认路由，并将 Tor 与桥接进程排除在隧道外。UDP 不支持；此功能尚未在真实网卡环境验证。"] = ("TUN takes over the device's default TCP route and excludes Tor and bridge processes. UDP is unsupported; this feature has not been verified with a live network adapter.", "TUN перехватывает основной TCP-маршрут устройства, исключая Tor и мосты. UDP не поддерживается; режим не проверен с реальным сетевым адаптером."),
+            ["TUN 仍在运行，请手动停止"] = ("TUN is still running; stop it manually", "TUN всё ещё работает; остановите его вручную"),
+            ["TUN 清理失败，请重试停止"] = ("TUN cleanup failed; retry stop", "Не удалось очистить TUN; повторите остановку"),
+            ["TUN 状态未确认"] = ("TUN state unconfirmed", "Состояние TUN не подтверждено"),
+            ["TUN 状态未确认，请检查网络或重启 Windows"] = ("TUN state is unconfirmed; check routing or restart Windows", "Состояние TUN не подтверждено; проверьте маршруты или перезапустите Windows"),
+            ["TUN 进程异常退出，Windows 路由清理状态无法确认。退出应用不会修复路由；请在继续使用网络前检查网络设置，必要时重启 Windows。"] = ("The TUN process exited unexpectedly and Windows route cleanup cannot be confirmed. Closing the app will not repair routing; check network settings before using the network, and restart Windows if needed.", "Процесс TUN неожиданно завершился, очистку маршрутов Windows подтвердить нельзя. Закрытие приложения не восстановит маршруты; проверьте сеть перед дальнейшим использованием и при необходимости перезапустите Windows."),
+            ["无法停止 TUN"] = ("Could not stop TUN", "Не удалось остановить TUN"),
+            ["无法安全关闭 TUN"] = ("Could not safely close TUN", "Не удалось безопасно закрыть TUN"),
+            ["可选接管设备 TCP 流量并经 Tor 转发。需要管理员权限；UDP 不支持。正常停止时由 sing-box 清理路由；异常退出后的路由恢复尚未验证。此功能尚未在真实网卡环境验证。"] = ("Optionally routes device TCP traffic through Tor. Requires administrator rights; UDP is unsupported. sing-box cleans up routes on a normal stop; recovery after an abnormal exit is unverified. The mode has not been tested with a live network adapter.", "Необязательная маршрутизация TCP-трафика устройства через Tor. Требуются права администратора; UDP не поддерживается. При штатной остановке sing-box очищает маршруты; восстановление после аварийного завершения не проверено. Режим не тестировался на реальном сетевом адаптере."),
+            ["Windows 版本提供本机代理和可选 TUN 模式；TUN 默认关闭，修改系统路由并阻断 UDP，尚未经过真实网卡验证。"] = ("The Windows client provides local proxies and an optional TUN mode. TUN is off by default, changes system routes, blocks UDP, and has not been tested with a live adapter.", "Клиент Windows предоставляет локальные прокси и необязательный режим TUN. По умолчанию TUN выключен, меняет системные маршруты, блокирует UDP и не проверен на реальном адаптере."),
+            ["代理类型、主机和端口需同时填写；密码仅在本地设置文件中保存。未填写时会尝试检测 Windows 当前代理中的本机 SOCKS5 上游。"] = ("Proxy type, host, and port must be supplied together; passwords are stored locally. If blank, Orbot checks the current Windows proxy for a reachable loopback SOCKS5 upstream.", "Тип прокси, хост и порт указываются вместе; пароль хранится локально. Если поля пусты, Orbot проверит текущий прокси Windows на доступный локальный SOCKS5.")
         };
 
     public static string Language => LanguageFor(Culture);

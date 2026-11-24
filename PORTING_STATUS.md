@@ -1,6 +1,6 @@
 # Orbot Windows Port Status
 
-This project is a Windows client for the portable Orbot/Tor control and local-proxy surface. Windows system routing is intentionally outside this port's scope.
+This project is a Windows client for the portable Orbot/Tor control and local-proxy surface, with an optional manually started sing-box/Wintun TUN mode.
 
 Implemented; locally verified with build, integration checks, and binary argument/version probes:
 
@@ -11,9 +11,11 @@ Implemented; locally verified with build, integration checks, and binary argumen
 - v3 Onion Service mappings and validated configuration backup/restore without exporting private keys.
 - v3 Onion client authorization import, protected storage, listing, export, and removal.
 - Chinese, Russian, and English fallback UI localization and notification-area lifecycle.
+- Optional Windows TUN configuration and lifecycle integration. sing-box config is parser-validated without starting an adapter. Tor and bridge executables route through the physical default interface, ordinary TCP routes through Tor SOCKS, DNS uses DoH over Tor, and UDP is blocked. An abnormal sing-box exit is surfaced as unconfirmed route cleanup and blocks another TUN start in the current app session. TUN itself is not live-adapter tested and remains experimental; abnormal-process-exit recovery is not verified.
+- When no explicit Tor outbound proxy is configured, a reachable loopback SOCKS5 endpoint from current Windows proxy settings is detected and used; detection skips Orbot's own ports and requires a successful no-auth SOCKS5 handshake.
 
 Windows scope and remaining upstream-only features:
 
 - Android quick settings/foreground-service equivalents and other Android-only system integrations.
 
-The Windows client deliberately does not install a kernel driver or service. It provides Tor local proxies and Windows user proxy integration; applications must use the SOCKS5 endpoint or honor the Windows user HTTP/HTTPS proxy. The 0.3.0 verification covers local build/integration tests and runtime binary probes; no real Tor bootstrap, Snowflake broker/WebRTC relay, or physical-device test was run.
+The TUN mode uses the official Wintun API alongside sing-box and does not install a persistent Windows service. It changes system routes while running, requires administrator rights, supports TCP only, and has not been tested on a live adapter. Verification includes local build/integration checks, config parsing without opening an adapter, and a real Tor bootstrap plus app/system proxy check. No Snowflake broker/WebRTC relay or DNSTT tunnel test was run.
